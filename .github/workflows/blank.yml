@@ -1,0 +1,171 @@
+setwd("/Users/davidcurreri/Brewster Stuff")
+
+
+library(plyr)
+library(dplyr)
+library(devtools)
+library(DT)
+library(ggplot2)
+library(ggrepel)
+library(ggthemes)
+library(gridExtra)
+library(janitor)
+library(plotly)
+library(stringr)
+library(tidyr)
+library(tidyselect)
+library(tidyverse)
+library(data.table)
+library(reactable)
+library(ggpubr)
+library(gtable)
+library(tibble)
+
+#Loading CSV
+ccbl_data = fread("ccbl_csv.csv")
+
+#Filtering for Brewster Hitters
+brewster_hitters <- ccbl_data %>%
+  filter(BatterTeam == "BRE_WHI")
+
+#Filter for Daniel Cuvet
+cuvet_table <- brewster_hitters %>%
+  filter(Batter == "Cuvet, Daniel") %>%
+  select(ExitSpeed, Angle, TaggedHitType, Bearing, Distance, PlateLocHeight, PlateLocSide, PlayResult) %>%
+  filter(!is.na(ExitSpeed) & !is.na(TaggedHitType) & !is.na(Bearing) & !is.na(Distance)) %>%
+  mutate(
+    ExitSpeed = round(ExitSpeed, 2),  # Adjust the number of decimal places as needed
+    Angle = round(Angle, 2)  # Adjust the number of decimal places as needed
+  )
+
+# Create the spray chart plot
+
+top_labels <- cuvet_table %>%
+  arrange(desc(ExitSpeed)) %>%
+  head(15)
+
+cuvet_spray_chart <- ggplot(cuvet_table, aes(x = sin(pi / 180 * Bearing) * Distance, y = cos(pi / 180 * Bearing) * Distance)) +
+  geom_point(aes(color = ExitSpeed), size = 3) +
+  geom_text_repel(data= top_labels, aes(label = ExitSpeed), vjust = -.5, hjust = .5, color = "black", size = 3, max.overlaps = Inf) +
+  scale_color_gradient2(low = "blue", high = "red", midpoint = 80) + # Midpoint set to 80
+  xlim(-325, 325) +
+  ylim(0, 450) +
+  geom_segment(aes(x = 0, y = 0, xend = -315, yend = 315), size = 1.2) + # Corrected aes usage
+  geom_segment(aes(x = 0, y = 0, xend = 315, yend = 315), size = 1.2) +  # Corrected aes usage
+  geom_curve(aes(x = -315, y = 315, xend = 315, yend = 315), curvature = -0.35, size = 1.2) + # Corrected aes usage
+  geom_curve(aes(x = -90, y = 88, xend = 90, yend = 88), curvature = -0.45, size = 1.2) + # Corrected aes usage
+  coord_fixed() +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  ) +
+  labs(color = "Exit Speed", title = "Spray Chart")
+
+# Print the plot
+print(cuvet_spray_chart)
+
+
+#Hit Strike Zone
+Left <- -8.5/12 
+Right <- 8.5/12 
+Bottom <- 18.29/12 
+Top <- 44.08/12 
+
+width <- (Right-Left) / 3 
+height <- (Top-Bottom) / 3 
+
+top_labels_strike_zone <- cuvet_table %>%
+  arrange(desc(ExitSpeed)) %>%
+  head(5)
+
+
+ggplot(cuvet_table, mapping = aes(x= PlateLocSide, y= PlateLocHeight)) +
+  geom_point(aes(color = TaggedHitType), size = 2) + xlim(-3,3) + ylim(0,6) +
+  scale_color_manual(values = c(GroundBall = "blue", LineDrive = "red",
+                                FlyBall = "orange", Popup = "black",
+                                Bunt = "green", PopUp = "grey",
+                                Undefined = "purple")) +
+  
+  #The Box
+  geom_segment(x= (Left), y= (Bottom), xend= (Right), yend= (Bottom)) +
+  geom_segment(x= (Left), y= (Top), xend= (Right), yend= (Top)) +
+  geom_segment(x= (Left), y= (Bottom), xend= (Left), yend= (Top)) +
+  geom_segment(x= (Right), y= (Bottom), xend= (Right), yend= (Top)) +
+  
+  geom_segment(x= (Left), y= (Bottom + height), xend= (Right), yend= (Bottom + height)) +
+  geom_segment(x= (Left), y= (Top - height), xend= (Right), yend= (Top - height)) +
+  
+  geom_segment(x= (Left + width), y= (Bottom), xend= (Left + width), yend= (Top)) +
+  geom_segment(x= (Right - width), y= (Bottom), xend= (Right - width), yend= (Top)) +
+  
+  geom_segment(x= (Left), y= (0), xend= (Right), yend= (0)) +
+  geom_segment(x= (Left), y= (0), xend= (Left), yend= (4.25/12)) +
+  geom_segment(x= (Left), y= (4.25/12), xend= (0), yend= (8.5/12)) +
+  geom_segment(x= (Right), y= (4.25/12), xend= (Right), yend= (0)) +
+  geom_segment(x= (0), y= (8.5/12), xend= (Right), yend= (4.25/12)) +
+  
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank()) + 
+  ggtitle("Cuvet")
+
+#Max EV
+cuvet_max_ev <- max(cuvet_table$ExitSpeed)
+
+#Hard Hit Percentage
+total_bip <- nrow(cuvet_table)
+hard_hits_count <- sum(cuvet_table$ExitSpeed >= 95)
+hard_hit_percentage <- (hard_hits_count / total_bip) * 100
+hard_hit_percentage <- round(hard_hit_percentage, 1)
+
+
+
+#90th Percentile EV
+cuvet_90th_percentile <- quantile(cuvet_table$ExitSpeed, 0.9, na.rm = TRUE)
+cuvet_90th_percentile <- round(cuvet_90th_percentile, 1)
+print(cuvet_90th_percentile)
+
+
+install.packages("gt")
+library(gt)
+
+
+
+#Calculating ISO
+unique(brewster_hitters$PlayResult)
+at_bat <- brewster_hitters %>%
+  filter(Batter == "Cuvet, Daniel") %>%
+  select(PlayResult)%>%
+  filter(PlayResult %in% c("Error", "Out", "Single", "Double", "Triple", "HomeRun", "FieldersChoice"))
+
+at_bat_total <- nrow(at_bat)
+
+#Calculating first part of equation
+weighted_hits <- sum(
+    ((at_bat$PlayResult == "Double")) +
+    (2 * (at_bat$PlayResult == "Triple")) +
+    (3 * (at_bat$PlayResult == "HomeRun"))
+)
+
+#Final Calculation
+iso <- weighted_hits / at_bat_total
+iso <- round(iso, digits = 3)
+
+  
+
+#Table
+cuvet_table_2 <- tibble('Max EV' = cuvet_max_ev,
+                        'Hard Hit %' = hard_hit_percentage,
+                        '90th Percent EV' = cuvet_90th_percentile,
+                        'Iso' = iso)
+cuvet_table_2 %>%
+  gt()%>%
+  tab_header(title = "Daniel Cuvet",
+             subtitle = "Advanced Statistics")
+
+   
